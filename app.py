@@ -2,12 +2,10 @@ import os
 os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
 import cv2
 import streamlit as st
-import cv2
 import numpy as np
 from ultralytics import YOLO
 from collections import defaultdict
 import tempfile
-import os
 
 st.set_page_config(page_title="Pedestrian Tracker", layout="wide")
 
@@ -29,13 +27,11 @@ class PedestrianTracker:
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-        frame_count = 0
 
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            frame_count += 1
 
             results = self.model.track(
                 frame,
@@ -45,13 +41,45 @@ class PedestrianTracker:
                 classes=[0],
                 tracker="bytetrack.yaml"
             )
-
             annotated_frame = self.visualize_tracks(frame, results[0], show_trails)
             out.write(annotated_frame)
 
         cap.release()
         out.release()
         return output_path
+
+    def process_image(self, image, show_trails=True):
+        results = self.model.track(
+            image,
+            persist=True,
+            conf=self.conf_threshold,
+            iou=self.iou_threshold,
+            classes=[0],
+            tracker="bytetrack.yaml"
+        )
+        return self.visualize_tracks(image, results[0], show_trails)
+
+    def process_webcam(self, show_trails=True):
+        cap = cv2.VideoCapture(0)
+        stframe = st.empty()
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            results = self.model.track(
+                frame,
+                persist=True,
+                conf=self.conf_threshold,
+                iou=self.iou_threshold,
+                classes=[0],
+                tracker="bytetrack.yaml"
+            )
+            annotated = self.visualize_tracks(frame, results[0], show_trails)
+            stframe.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), channels="RGB")
+            if not st.session_state["running"]:
+                break
+        cap.release()
 
     def visualize_tracks(self, frame, result, show_trails=True):
         annotated = frame.copy()
@@ -90,40 +118,72 @@ class PedestrianTracker:
 # Streamlit UI
 # -------------------------------
 st.title("🚶 Pedestrian Tracking System using YOLOv8 + ByteTrack")
-st.write("Upload a video and track pedestrians with unique IDs in real-time!")
+st.write("Choose input type below 👇")
 
-uploaded_file = st.file_uploader("Upload a video", type=["mp4", "mov", "avi", "mkv"])
+option = st.radio("Select input type", ["Webcam Live", "Upload Video", "Upload Image"])
 show_trails = st.checkbox("Show Tracking Trails", value=True)
 
-# Load YOLO model only once
 @st.cache_resource
 def load_model():
     return PedestrianTracker(model_path="best (2).pt")
 
-if uploaded_file is not None:
-    with st.spinner("Processing video... please wait ⏳"):
-        # Save uploaded file temporarily
-        tfile = tempfile.NamedTemporaryFile(delete=False)
-        tfile.write(uploaded_file.read())
+tracker = load_model()
 
-        # Output temp file
-        out_path = os.path.join(tempfile.gettempdir(), "output.mp4")
+# Initialize session state for webcam
+if "running" not in st.session_state:
+    st.session_state["running"] = False
 
-        # Run tracker
-        tracker = load_model()
-        tracker.process_video(tfile.name, out_path, show_trails=show_trails)
+# -------------------------------
+# Option: Webcam Live
+# -------------------------------
+if option == "Webcam Live":
+    start_btn = st.button("Start Webcam Tracking 🎥")
+    stop_btn = st.button("Stop Webcam")
 
-        st.success("✅ Processing complete!")
-        st.video(out_path)
+    if start_btn:
+        st.session_state["running"] = True
+        tracker.process_webcam(show_trails=show_trails)
+    elif stop_btn:
+        st.session_state["running"] = False
 
-        # Option to download result
-        with open(out_path, "rb") as f:
-            st.download_button(
-                label="Download Processed Video 🎥",
-                data=f,
-                file_name="pedestrian_tracked.mp4",
-                mime="video/mp4"
-            )
+# -------------------------------
+# Option: Upload Video
+# -------------------------------
+elif option == "Upload Video":
+    uploaded_file = st.file_uploader("Upload a video", type=["mp4", "mov", "avi", "mkv"])
+    if uploaded_file is not None:
+        start_btn = st.button("Start Processing ▶️")
+        if start_btn:
+            with st.spinner("Processing video... please wait ⏳"):
+                tfile = tempfile.NamedTemporaryFile(delete=False)
+                tfile.write(uploaded_file.read())
+
+                out_path = os.path.join(tempfile.gettempdir(), "output.mp4")
+                tracker.process_video(tfile.name, out_path, show_trails=show_trails)
+
+                st.success("✅ Processing complete!")
+                st.video(out_path)
+
+                with open(out_path, "rb") as f:
+                    st.download_button(
+                        label="Download Processed Video 🎥",
+                        data=f,
+                        file_name="pedestrian_tracked.mp4",
+                        mime="video/mp4"
+                    )
+
+# -------------------------------
+# Option: Upload Image
+# -------------------------------
+elif option == "Upload Image":
+    uploaded_image = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+    if uploaded_image is not None:
+        start_btn = st.button("Start Detection 🖼️")
+        if start_btn:
+            file_bytes = np.asarray(bytearray(uploaded_image.read()), dtype=np.uint8)
+            img = cv2.imdecode(file_bytes, 1)
+            result_img = tracker.process_image(img, show_trails=show_trails)
+            st.image(cv2.cvtColor(result_img, cv2.COLOR_BGR2RGB), caption="Processed Image", use_container_width=True)
 
 st.markdown("---")
 st.caption("Developed by Akhilesh Singh | YOLOv8 + ByteTrack 🚀")
