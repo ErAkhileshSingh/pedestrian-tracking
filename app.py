@@ -12,7 +12,7 @@ st.set_page_config(page_title="Pedestrian Tracker", layout="wide")
 # Helper Class
 # -------------------------------
 class PedestrianTracker:
-    def __init__(self, model_path='yolov8n.pt', conf_threshold=0.3, iou_threshold=0.5):
+    def __init__(self, model_path='best (2).pt', conf_threshold=0.3, iou_threshold=0.5):
         self.model = YOLO(model_path)
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
@@ -95,7 +95,7 @@ show_trails = st.checkbox("Show Tracking Trails", value=True)
 # Load YOLO model only once
 @st.cache_resource
 def load_model():
-    return PedestrianTracker(model_path="yolov8n.pt")
+    return PedestrianTracker(model_path="best (2).pt")
 
 if uploaded_file is not None:
     with st.spinner("Processing video... please wait ⏳"):
