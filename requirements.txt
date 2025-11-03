@@ -8,3 +8,4 @@ Pillow
 opencv-python-headless==4.10.0.84
 imageio[ffmpeg]
 opencv-python
+streamlit-webrtc

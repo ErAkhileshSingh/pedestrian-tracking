@@ -6,6 +6,7 @@ import numpy as np
 from ultralytics import YOLO
 from collections import defaultdict
 import tempfile
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 st.set_page_config(page_title="Pedestrian Tracker", layout="wide")
 
@@ -59,28 +60,6 @@ class PedestrianTracker:
         )
         return self.visualize_tracks(image, results[0], show_trails)
 
-    def process_webcam(self, show_trails=True):
-        cap = cv2.VideoCapture(0)
-        stframe = st.empty()
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            results = self.model.track(
-                frame,
-                persist=True,
-                conf=self.conf_threshold,
-                iou=self.iou_threshold,
-                classes=[0],
-                tracker="bytetrack.yaml"
-            )
-            annotated = self.visualize_tracks(frame, results[0], show_trails)
-            stframe.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), channels="RGB")
-            if not st.session_state["running"]:
-                break
-        cap.release()
-
     def visualize_tracks(self, frame, result, show_trails=True):
         annotated = frame.copy()
         if result.boxes is None or result.boxes.id is None:
@@ -115,6 +94,27 @@ class PedestrianTracker:
         return tuple(np.random.randint(0, 255, 3).tolist())
 
 # -------------------------------
+# WebRTC Transformer
+# -------------------------------
+class WebcamTransformer(VideoTransformerBase):
+    def __init__(self, tracker, show_trails=True):
+        self.tracker = tracker
+        self.show_trails = show_trails
+
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        results = self.tracker.model.track(
+            img,
+            persist=True,
+            conf=self.tracker.conf_threshold,
+            iou=self.tracker.iou_threshold,
+            classes=[0],
+            tracker="bytetrack.yaml"
+        )
+        annotated = self.tracker.visualize_tracks(img, results[0], self.show_trails)
+        return annotated
+
+# -------------------------------
 # Streamlit UI
 # -------------------------------
 st.title("🚶 Pedestrian Tracking System using YOLOv8 + ByteTrack")
@@ -129,22 +129,17 @@ def load_model():
 
 tracker = load_model()
 
-# Initialize session state for webcam
-if "running" not in st.session_state:
-    st.session_state["running"] = False
-
 # -------------------------------
 # Option: Webcam Live
 # -------------------------------
 if option == "Webcam Live":
-    start_btn = st.button("Start Webcam Tracking 🎥")
-    stop_btn = st.button("Stop Webcam")
-
-    if start_btn:
-        st.session_state["running"] = True
-        tracker.process_webcam(show_trails=show_trails)
-    elif stop_btn:
-        st.session_state["running"] = False
+    st.info("Webcam mode uses browser-based capture and works on Streamlit Cloud ✅")
+    webrtc_streamer(
+        key="webcam",
+        video_transformer_factory=lambda: WebcamTransformer(tracker, show_trails),
+        media_stream_constraints={"video": True, "audio": False},
+        async_transform=True
+    )
 
 # -------------------------------
 # Option: Upload Video
