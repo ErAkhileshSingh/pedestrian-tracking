@@ -7,6 +7,9 @@ from ultralytics import YOLO
 from collections import defaultdict
 import tempfile
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import logging
+
+
 
 st.set_page_config(page_title="Pedestrian Tracker", layout="wide")
 
@@ -118,7 +121,7 @@ class WebcamTransformer(VideoTransformerBase):
             print("Tracking error:", e)
             return img  # fallback to original frame
 
-
+logging.basicConfig(level=logging.DEBUG)
 # -------------------------------
 # Streamlit UI
 # -------------------------------
@@ -144,9 +147,9 @@ if option == "Webcam Live":
     video_transformer_factory=lambda: WebcamTransformer(tracker, show_trails),
     media_stream_constraints={"video": True, "audio": False},
     async_transform=True,
-    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-    sendback_audio=False
-    )
+    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
+
 
 
 # -------------------------------
