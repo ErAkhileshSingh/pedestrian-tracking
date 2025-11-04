@@ -1,15 +1,19 @@
 import os
 os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
+
 import cv2
-import streamlit as st
-import numpy as np
-from ultralytics import YOLO
-from collections import defaultdict
-import tempfile
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import time
+import threading
 import logging
+import tempfile
+from collections import defaultdict
 
+import numpy as np
+import streamlit as st
+from ultralytics import YOLO
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
+logging.basicConfig(level=logging.INFO)
 
 st.set_page_config(page_title="Pedestrian Tracker", layout="wide")
 
@@ -21,7 +25,7 @@ class PedestrianTracker:
         self.model = YOLO(model_path)
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
-        self.track_history = defaultdict(lambda: [])
+        self.track_history = defaultdict(list)
 
     def process_video(self, input_path, output_path, show_trails=True):
         cap = cv2.VideoCapture(input_path)
@@ -65,7 +69,7 @@ class PedestrianTracker:
 
     def visualize_tracks(self, frame, result, show_trails=True):
         annotated = frame.copy()
-        if result.boxes is None or result.boxes.id is None:
+        if getattr(result, "boxes", None) is None or getattr(result.boxes, "id", None) is None:
             return annotated
 
         boxes = result.boxes.xyxy.cpu().numpy()
@@ -93,35 +97,63 @@ class PedestrianTracker:
         return annotated
 
     def _get_color(self, track_id):
-        np.random.seed(track_id)
-        return tuple(np.random.randint(0, 255, 3).tolist())
+        rng = np.random.RandomState(track_id)
+        return tuple(int(x) for x in rng.randint(0, 255, 3))
 
 # -------------------------------
-# WebRTC Transformer
+# Load model once (cached)
+# -------------------------------
+@st.cache_resource
+def load_model(model_path="best (2).pt"):
+    logging.info("Loading model...")
+    return PedestrianTracker(model_path=model_path)
+
+tracker = load_model()
+
+# -------------------------------
+# WebRTC Transformer (robust)
 # -------------------------------
 class WebcamTransformer(VideoTransformerBase):
-    def __init__(self, tracker, show_trails=True):
+    def __init__(self, tracker, show_trails=True, process_every_n=2):
         self.tracker = tracker
         self.show_trails = show_trails
+        self.process_every_n = process_every_n
+        self.frame_count = 0
+        self.lock = threading.Lock()
 
     def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
+        # Ensure we always return a valid ndarray to avoid component crashes
         try:
-            results = self.tracker.model.track(
-            img,
-            persist=True,
-            conf=self.tracker.conf_threshold,
-            iou=self.tracker.iou_threshold,
-            classes=[0],
-            tracker="bytetrack.yaml"
-            )
-            annotated = self.tracker.visualize_tracks(img, results[0], self.show_trails)
+            img = frame.to_ndarray(format="bgr24")
+        except Exception as e:
+            logging.exception("Failed to convert frame to ndarray")
+            # return a black frame fallback with common resolution
+            return np.zeros((480, 640, 3), dtype=np.uint8)
+
+        # Throttle processing to reduce CPU/GPU load
+        self.frame_count += 1
+        if (self.frame_count % self.process_every_n) != 0:
+            # draw a small indicator and return original frame
+            cv2.putText(img, "skip", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+            return img
+
+        # Run detection + tracking safely
+        try:
+            with self.lock:
+                results = self.tracker.model.track(
+                    img,
+                    persist=True,
+                    conf=self.tracker.conf_threshold,
+                    iou=self.tracker.iou_threshold,
+                    classes=[0],
+                    tracker="bytetrack.yaml"
+                )
+                annotated = self.tracker.visualize_tracks(img, results[0], self.show_trails)
             return annotated
         except Exception as e:
-            print("Tracking error:", e)
-            return img  # fallback to original frame
+            logging.exception("Error during model.track")
+            return img
 
-logging.basicConfig(level=logging.DEBUG)
 # -------------------------------
 # Streamlit UI
 # -------------------------------
@@ -131,27 +163,18 @@ st.write("Choose input type below 👇")
 option = st.radio("Select input type", ["Webcam Live", "Upload Video", "Upload Image"])
 show_trails = st.checkbox("Show Tracking Trails", value=True)
 
-@st.cache_resource
-def load_model():
-    return PedestrianTracker(model_path="best (2).pt")
-
-tracker = load_model()
-
 # -------------------------------
 # Option: Webcam Live
 # -------------------------------
 if option == "Webcam Live":
     st.info("Webcam mode uses browser-based capture and works on Streamlit Cloud ✅")
     webrtc_streamer(
-    key="webcam",
-    video_transformer_factory=lambda: WebcamTransformer(tracker, show_trails),
-    media_stream_constraints={"video": True, "audio": False},
-    async_transform=True,
-    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+        key="webcam",
+        video_transformer_factory=lambda: WebcamTransformer(tracker, show_trails, process_every_n=2),
+        media_stream_constraints={"video": True, "audio": False},
+        async_transform=True,
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
     )
-
-
-
 
 # -------------------------------
 # Option: Upload Video
@@ -188,7 +211,7 @@ elif option == "Upload Image":
         start_btn = st.button("Start Detection 🖼️")
         if start_btn:
             file_bytes = np.asarray(bytearray(uploaded_image.read()), dtype=np.uint8)
-            img = cv2.imdecode(file_bytes, 1)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             result_img = tracker.process_image(img, show_trails=show_trails)
             st.image(cv2.cvtColor(result_img, cv2.COLOR_BGR2RGB), caption="Processed Image", use_container_width=True)
 
