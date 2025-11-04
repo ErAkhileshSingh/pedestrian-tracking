@@ -1,11 +1,7 @@
-streamlit
-ultralytics
-torch
-torchvision
+streamlit==1.30.0
+streamlit-webrtc==0.57.0
+ultralytics==8.x
+torch==<appropriate-wheel-for-runtime>
+opencv-python==4.8.1.78
 numpy
-pandas
-Pillow
-opencv-python-headless==4.10.0.84
 imageio[ffmpeg]
-opencv-python
-streamlit-webrtc
