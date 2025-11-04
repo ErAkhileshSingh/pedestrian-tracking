@@ -103,16 +103,21 @@ class WebcamTransformer(VideoTransformerBase):
 
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
-        results = self.tracker.model.track(
+        try:
+            results = self.tracker.model.track(
             img,
             persist=True,
             conf=self.tracker.conf_threshold,
             iou=self.tracker.iou_threshold,
             classes=[0],
             tracker="bytetrack.yaml"
-        )
-        annotated = self.tracker.visualize_tracks(img, results[0], self.show_trails)
-        return annotated
+            )
+            annotated = self.tracker.visualize_tracks(img, results[0], self.show_trails)
+            return annotated
+        except Exception as e:
+            print("Tracking error:", e)
+            return img  # fallback to original frame
+
 
 # -------------------------------
 # Streamlit UI
@@ -135,11 +140,14 @@ tracker = load_model()
 if option == "Webcam Live":
     st.info("Webcam mode uses browser-based capture and works on Streamlit Cloud ✅")
     webrtc_streamer(
-        key="webcam",
-        video_transformer_factory=lambda: WebcamTransformer(tracker, show_trails),
-        media_stream_constraints={"video": True, "audio": False},
-        async_transform=True
+    key="webcam",
+    video_transformer_factory=lambda: WebcamTransformer(tracker, show_trails),
+    media_stream_constraints={"video": True, "audio": False},
+    async_transform=True,
+    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+    sendback_audio=False
     )
+
 
 # -------------------------------
 # Option: Upload Video
