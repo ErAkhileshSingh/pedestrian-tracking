@@ -148,7 +148,8 @@ if option == "Webcam Live":
     media_stream_constraints={"video": True, "audio": False},
     async_transform=True,
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-)
+    )
+
 
 
 
