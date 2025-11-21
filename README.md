@@ -35,11 +35,10 @@ The main objectives are:
 pedestrian-tracking/
 │
 ├── app.py                  # Main application for detection & tracking
-├── best.pt                 # Trained YOLOv8n model weights
+├── CustomTrainedModel.pt                 # Trained YOLOv8n model weights
 ├── requirements.txt        # Dependencies for local setup
 ├── packages.txt            # Extra packages for Google Colab setup
 ├── data.yaml               # Dataset configuration file
-├── runs/                   # YOLOv8 training results & logs
 └── README.md               # Project documentation
 
 ````
@@ -168,13 +167,6 @@ datasets/
 ## 👨‍💻 Author
 
 **Akhilesh Singh**
-AI/ML Intern | Computer Science Engineer
-📍 Bahadurgarh, Haryana
-🔗 [GitHub Profile](https://github.com/ErAkhileshSingh)
 
 ---
 
----
-
-Would you like me to add **badges** (e.g., Python version, Ultralytics, Colab, License, Stars) and a **preview image section** at the top for a more professional GitHub look?
-```
